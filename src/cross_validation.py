@@ -66,7 +66,7 @@ class CrossValidation:
             self.dataframe.loc[:len(self.dataframe) - num_holdout_samples, 'kfold'] = 0
             self.dataframe.loc[len(self.dataframe) - num_holdout_samples:, 'kfold'] = 1
 
-        elif self.problem_type = 'multi_label_classification':
+        elif self.problem_type == 'multi_label_classification':
             if self.num_targets != 1:
                 raise Exception('Invalid number of targets fro this problem type')
             targets = self.dataframe[self.target_cols[0]].apply(lambda x: str(x).split(self.multilabel_delimiter))
