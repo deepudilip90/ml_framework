@@ -1,71 +1,50 @@
 import os
-import pandas as pd
-from sklearn import ensemble
-from sklearn import preprocessing
-from sklearn import metrics
-from dispatcher import MODELS
+import argparse
 import joblib
 
+import pandas as pd
+from sklearn import tree
+from sklearn import metrics
 
-def train(path_train_data, path_test_data, fold_mapping, fold, model):
-    print('Training for training fold: ', fold)
-    df = pd.read_csv(path_train_data)
-    df_test = pd.read_csv(path_test_data)
-    
-    train_df = df[df.kfold.isin(fold_mapping.get(fold))]
-    valid_df = df[df.kfold==fold]
+from src import config, dispatcher
+from src.metrics import f1
 
-    ytrain = train_df.target.values
-    yvalid = valid_df.target.values
 
-    train_df = train_df.drop(['id', 'target', 'kfold'], axis=1)
-    valid_df = valid_df.drop(['id', 'target', 'kfold'], axis=1)
+def run(fold, model):
+    df = pd.read_csv(config.TRAINING_FILE)
 
-    valid_df = valid_df[train_df.columns]
+    df_train = df[df.kfold != fold].reset_index(drop=True)
+    df_valid = df[df.kfold == fold].reset_index(drop=True)
 
-    label_encoders = {}
+    x_train = df_train.drop(columns=['kfold', 'y']).values
+    y_train = df_train['y'].values
 
-    for c in train_df.columns:
-        lbl = preprocessing.LabelEncoder()
-        lbl.fit(train_df[c].values.tolist() + valid_df[c].values.tolist() + df_test[c].values.tolist())
-        train_df.loc[:, c] = lbl.transform(train_df[c].values.tolist())
-        valid_df.loc[:, c] = lbl.transform(valid_df[c].values.tolist())
-        label_encoders[c] = lbl
+    x_valid = df_valid.drop(columns=['kfold', 'y']).values
+    y_valid = df_valid['y'].values
 
-    print('Fitting Model: ', MODELS[model])
-    clf = MODELS[model]
-    
-    clf.fit(train_df, ytrain)
-    preds = clf.predict_proba(valid_df)[:, 1]
-    print(preds)
-    print(metrics.roc_auc_score(yvalid, preds))
+    clf = dispatcher.MODELS[model]
+    clf.fit(x_train, y_train)
 
-    joblib.dump(label_encoders, f'models/{model}_{fold}_label_encoder.pkl')
-    joblib.dump(clf, f'models/{model}_{fold}.pkl')
-    joblib.dump(train_df.columns, f"models/{model}_{fold}_columns.pkl")
+    preds = clf.predict(x_valid)
+    probs = clf.predict_proba(x_valid)[:, 1]
+
+    # accuracy = metrics.accuracy_score(y_valid, preds)
+    report = metrics.classification_report(y_valid, preds)
+    auc = metrics.roc_auc_score(y_valid, probs)
+    # print(f"Fold={fold}, Accuracy = {accuracy}")
+    print(f"Fold={fold}, Report = {report}")
+    print(f"Fold={fold}, AUC = {auc}")
+
+    joblib.dump(clf,
+                os.path.join(config.MODEL_OUTPUT, f"dt_{model}_{fold}.bin")
+                )
+
 
 if __name__ == '__main__':
-    TRAINING_DATA = 'input/train_folds.csv'
-    TEST_DATA = 'input/test.csv'
 
-    FOLD_MAPPING = {
-        0: [1, 2, 3, 4],
-        1: [0, 2, 3, 4],
-        2: [0, 1, 3, 4],
-        3: [0, 1, 2, 4],
-        4: [0, 1, 2, 3]}
-    FOLD = 0
-    MODEL='extratrees'
-    train(TRAINING_DATA, TEST_DATA, FOLD_MAPPING, 0, MODEL)
-    train(TRAINING_DATA, TEST_DATA, FOLD_MAPPING, 1, MODEL)
-    train(TRAINING_DATA, TEST_DATA, FOLD_MAPPING, 2, MODEL)
-    train(TRAINING_DATA, TEST_DATA, FOLD_MAPPING, 3, MODEL)
-    train(TRAINING_DATA, TEST_DATA, FOLD_MAPPING, 4, MODEL)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fold", type=int)
+    parser.add_argument("--model", type=str)
+    args = parser.parse_args()
 
-
-
-    
-
-
-    
-
+    run(fold=args.fold, model=args.model)
